@@ -388,16 +388,49 @@ function updateMontantOeuf($commandeOeufsData, $commandeOeufsParams)
                 $commandeOeufs->setUpdated_at($today);
 
                 #Si le client paie la totalite de sa dette, on modifie le montant et le statut de sa cmde change REGLE 
-                if (($montant == $prixTotal) && ($cmdClientFound->statusCmd_id == STATUS_CMD_E_DETTE)) {
-                    $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
-                    $commandeClients->setUpdated_at($today);
+                if (($montant == $prixTotal)) {
+                    if ((in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
 
-                    $commandeClientsModel->update($cmdClientID, $commandeClients);
-                    createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
-                    $commandeOeufsModel->update($commandeOeufID, $commandeOeufs);
-                    $message = "Le montant de la Commande Oeuf updated successfully";
-                    createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_OEUF);
-                    return success200($message);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeOeufsModel->update($commandeOeufID, $commandeOeufs);
+                        $message = "Le montant de la Commande Oeuf updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_OEUF);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeOeufsModel->update($commandeOeufID, $commandeOeufs);
+                        $message = "Le montant de la Commande Oeuf updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_OEUF);
+                        return success200($message);
+                    }
+                } elseif (($montant < $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_PAYABLE))) {
+                    $somme = sommeMontant($oldMontant, $newMontant);
+                    if (($somme >= $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeOeufsModel->update($commandeOeufID, $commandeOeufs);
+                        $message = "Le montant de la Commande Oeuf updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_OEUF);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeOeufsModel->update($commandeOeufID, $commandeOeufs);
+                        $message = "Le montant de la Commande Oeuf updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_OEUF);
+                        return success200($message);
+                    }
                 } else {
                     $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
                     $commandeClients->setUpdated_at($today);
@@ -420,4 +453,76 @@ function updateMontantOeuf($commandeOeufsData, $commandeOeufsParams)
         $message = "Commande Oeuf not update";
         return success205($message);
     }
+}
+
+function statutCmdOeuf($cmdOuefID)
+{
+    require_once 'php-jwt/authentification.php';
+    $commandeOeufsModel = new Commande_oeufsModel();
+    $commandeAliments = $commandeOeufsModel;
+    $commandeClientsModel = new Commande_clientsModel();
+    $commandeClients = $commandeClientsModel;
+    # test de chargement de parametre
+    // paramsVerify($commandeAlimentsParams, "Commande Aliment");
+
+    $payload = authentification();
+    $user = (array)json_decode($payload);
+
+    $auteurID = $user["id"];
+    $role = $user["role"];
+    $cmdOeufsData = array();
+
+    if ($role == IS_ADMIN) {
+        $cmdOeufsData["admins_id"] = $auteurID;
+        $cmdOeufsData["admins_idAdmin"] = $auteurID;
+        $cmdOeufsData["agents_id"] = ID_AGENT_SYSTEME;
+        $cmdOeufsData["agents_idAgent"] = ID_AGENT_SYSTEME;
+        $cmdOeufsData["role_id"] = IS_ADMIN_ID;
+    } elseif ($role == IS_AGENT) {
+        $cmdOeufsData["agents_id"] = $auteurID;
+        $cmdOeufsData["agents_idAgent"] = $auteurID;
+        $cmdOeufsData["admins_id"] = ID_ADMIN_SYSTEME;
+        $cmdOeufsData["admins_idAdmin"] = ID_ADMIN_SYSTEME;
+        $cmdOeufsData["role_id"] = IS_AGENT_ID;
+    }
+
+    $commandeOeufsID = $cmdOuefID;
+    $dataCmdOeufFound = $commandeOeufsModel->find($commandeOeufsID);
+
+    $cmdClientID = $dataCmdOeufFound->commandeClients_idCommande;
+    $dataCmdClientFound = $commandeClientsModel->find($cmdClientID);
+
+    $natureID = $dataCmdClientFound->natures_idNature;
+    $clientID = $dataCmdClientFound->clients_idClient;
+    $statusCmdID = $dataCmdClientFound->statusCmd_id;
+    $sortieID = $dataCmdClientFound->id_sortie;
+
+    $quantite = $dataCmdOeufFound->quantite;
+    $montant = $dataCmdOeufFound->montant;
+    $prixtotal = $dataCmdOeufFound->prixtotal;
+
+    $cmdOeufsData["commandeClients_idCommande"] = $cmdClientID;
+    $today = getSiku();
+    $cmdOeufsData["date"] = $today;
+    $cmdOeufsData["siku"] = $today;
+    $cmdOeufsData["etat_rapportID"] = ETAT_BON;
+    $cmdOeufsData["natures_idNature"] = $natureID;
+    $cmdOeufsData["quantite"] = $quantite;
+    $cmdOeufsData["montant"] = $montant;
+    $cmdOeufsData["prixtotal"] = $prixtotal;
+    $cmdOeufsData["clients_idClient"] = $clientID;
+    $cmdOeufsData["statusCmd_id"] = $statusCmdID;
+
+    $cmdOeufsData['motifSorties_idMotif'] = MOTIF_SORTIE_CASH;
+    sortieOeuf($cmdOeufsData);
+
+    // $commandeClients->setStatusCmd_id($newStatusCmdID);
+    // $commandeClients->setUpdated_at($today);
+
+    $sortieID = getLastSortie($cmdOeufsData)->id;
+    $commandeClients->setId_sortie($sortieID);
+    $commandeClientsModel->update($cmdClientID, $commandeClients);
+    // createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+    // $message = "Le Statut de Commande Aliment du client a été reglé";
+    // return success200($message);
 }

@@ -378,17 +378,55 @@ function updateMontantPoulet($commandePouletsData, $commandePouletsParams)
                 $commandePoulets->setUpdated_at($today);
 
                 #Si le client paie la totalite de sa dette, on modifie le montant et le statut de sa cmde change REGLE 
-                if (($montant == $prixTotal) && ($cmdClientFound->statusCmd_id == STATUS_CMD_E_DETTE)) {
-                    $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
-                    $commandeClients->setUpdated_at($today);
+                if (($montant == $prixTotal)) {
+                    if ((in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
 
-                    $commandeClientsModel->update($cmdClientID, $commandeClients);
-                    createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
 
-                    $commandePouletsModel->update($commandePouletsID, $commandePoulets);
-                    $message = "Le montant de la Commande Poulet updated successfully";
-                    createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POULET);
-                    return success200($message);
+                        $commandePouletsModel->update($commandePouletsID, $commandePoulets);
+                        $message = "Le montant de la Commande Poulet updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POULET);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandePouletsModel->update($commandePouletsID, $commandePoulets);
+                        $message = "Le montant de la Commande Poulet updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POULET);
+                        return success200($message);
+                    }
+                } elseif (($montant < $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_PAYABLE))) {
+                    $somme = sommeMontant($oldMontant, $newMontant);
+                    if (($somme >= $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandePouletsModel->update($commandePouletsID, $commandePoulets);
+                        $message = "Le montant de la Commande Poulet updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POULET);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandePouletsModel->update($commandePouletsID, $commandePoulets);
+                        $message = "Le montant de la Commande Poulet updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POULET);
+                        return success200($message);
+                    }
                 } else {
                     $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
                     $commandeClients->setUpdated_at($today);
@@ -411,4 +449,76 @@ function updateMontantPoulet($commandePouletsData, $commandePouletsParams)
         $message = "Commande Poulet not update";
         return success205($message);
     }
+}
+
+function statutCmdPoulet($cmdPouletID)
+{
+    require_once 'php-jwt/authentification.php';
+    $commandePouletsModel = new Commande_pouletsModel();
+    $commandeAliments = $commandePouletsModel;
+    $commandeClientsModel = new Commande_clientsModel();
+    $commandeClients = $commandeClientsModel;
+    # test de chargement de parametre
+    // paramsVerify($commandeAlimentsParams, "Commande Aliment");
+
+    $payload = authentification();
+    $user = (array)json_decode($payload);
+
+    $auteurID = $user["id"];
+    $role = $user["role"];
+    $cmdPouletsData = array();
+
+    if ($role == IS_ADMIN) {
+        $cmdPouletsData["admins_id"] = $auteurID;
+        $cmdPouletsData["admins_idAdmin"] = $auteurID;
+        $cmdPouletsData["agents_id"] = ID_AGENT_SYSTEME;
+        $cmdPouletsData["agents_idAgent"] = ID_AGENT_SYSTEME;
+        $cmdPouletsData["role_id"] = IS_ADMIN_ID;
+    } elseif ($role == IS_AGENT) {
+        $cmdPouletsData["agents_id"] = $auteurID;
+        $cmdPouletsData["agents_idAgent"] = $auteurID;
+        $cmdPouletsData["admins_id"] = ID_ADMIN_SYSTEME;
+        $cmdPouletsData["admins_idAdmin"] = ID_ADMIN_SYSTEME;
+        $cmdPouletsData["role_id"] = IS_AGENT_ID;
+    }
+
+    $commandePouletID = $cmdPouletID;
+    $dataCmdPouletFound = $commandePouletsModel->find($commandePouletID);
+
+    $cmdClientID = $dataCmdPouletFound->commandeClients_idCommande;
+    $dataCmdClientFound = $commandeClientsModel->find($cmdClientID);
+
+    $natureID = $dataCmdClientFound->natures_idNature;
+    $clientID = $dataCmdClientFound->clients_idClient;
+    $statusCmdID = $dataCmdClientFound->statusCmd_id;
+    $sortieID = $dataCmdClientFound->id_sortie;
+
+    $quantite = $dataCmdPouletFound->quantite;
+    $montant = $dataCmdPouletFound->montant;
+    $prixtotal = $dataCmdPouletFound->prixtotal;
+
+    $cmdPouletsData["commandeClients_idCommande"] = $cmdClientID;
+    $today = getSiku();
+    $cmdPouletsData["date"] = $today;
+    $cmdPouletsData["siku"] = $today;
+    $cmdPouletsData["etat_rapportID"] = ETAT_BON;
+    $cmdPouletsData["natures_idNature"] = $natureID;
+    $cmdPouletsData["quantite"] = $quantite;
+    $cmdPouletsData["montant"] = $montant;
+    $cmdPouletsData["prixtotal"] = $prixtotal;
+    $cmdPouletsData["clients_idClient"] = $clientID;
+    $cmdPouletsData["statusCmd_id"] = $statusCmdID;
+
+    $cmdPouletsData['motifSorties_idMotif'] = MOTIF_SORTIE_CASH;
+    sortiePoulet($cmdPouletsData);
+
+    // $commandeClients->setStatusCmd_id($newStatusCmdID);
+    // $commandeClients->setUpdated_at($today);
+
+    $sortieID = getLastSortie($cmdPouletsData)->id;
+    $commandeClients->setId_sortie($sortieID);
+    $commandeClientsModel->update($cmdClientID, $commandeClients);
+    // createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+    // $message = "Le Statut de Commande Aliment du client a été reglé";
+    // return success200($message);
 }

@@ -371,7 +371,6 @@ function updateMontantAliment($commandeAlimentsData, $commandeAlimentsParams)
     $commandeAlimentsID = $commandeAlimentsParams['id'];
     $today = getSiku();
     $commandeAlimentsData["siku"] = $today;
-
     $commandeAlimentsFound = $commandeAlimentsModel->find($commandeAlimentsID);
 
 
@@ -391,17 +390,58 @@ function updateMontantAliment($commandeAlimentsData, $commandeAlimentsParams)
                 $commandeAliments->setUpdated_at($today);
 
                 #Si le client paie la totalite de sa dette, on modifie le montant et le statut de sa cmde change REGLE 
-                if (($montant == $prixTotal) && ($cmdClientFound->statusCmd_id == STATUS_CMD_E_DETTE)) {
-                    $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
-                    $commandeClients->setUpdated_at($today);
+                if ($montant == $prixTotal) {
+                    // statutCmdAliment($commandeAlimentsID);
+                    if ((in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
 
-                    $commandeClientsModel->update($cmdClientID, $commandeClients);
-                    createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
 
-                    $commandeAlimentsModel->update($commandeAlimentsID, $commandeAliments);
-                    $message = "Le montant de la Commande Aliment updated successfully";
-                    createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_ALIMENT);
-                    return success200($message);
+                        $commandeAlimentsModel->update($commandeAlimentsID, $commandeAliments);
+
+                        $message = "Le montant de la Commande Aliment updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandeAlimentsModel->update($commandeAlimentsID, $commandeAliments);
+
+                        $message = "Le montant de la Commande Aliment updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+                        return success200($message);
+                    }
+                } elseif (($montant < $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_PAYABLE))) {
+
+                    $somme = sommeMontant($oldMontant, $newMontant);
+                    if (($somme >= $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        // statutCmdAliment($commandeAlimentsID);
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandeAlimentsModel->update($commandeAlimentsID, $commandeAliments);
+                        $message = "Le montant de la Commande Aliment updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandeAlimentsModel->update($commandeAlimentsID, $commandeAliments);
+                        $message = "Le montant de la Commande Aliment updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+                        return success200($message);
+                    }
                 } else {
                     $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
                     $commandeClients->setUpdated_at($today);
@@ -425,4 +465,76 @@ function updateMontantAliment($commandeAlimentsData, $commandeAlimentsParams)
         $message = "Commande Aliment not update";
         return success205($message);
     }
+}
+
+function statutCmdAliment($cmdAlimentID)
+{
+    require_once 'php-jwt/authentification.php';
+    $commandeAlimentsModel = new Commande_alimentsModel();
+    $commandeAliments = $commandeAlimentsModel;
+    $commandeClientsModel = new Commande_clientsModel();
+    $commandeClients = $commandeClientsModel;
+    # test de chargement de parametre
+    // paramsVerify($commandeAlimentsParams, "Commande Aliment");
+
+    $payload = authentification();
+    $user = (array)json_decode($payload);
+
+    $auteurID = $user["id"];
+    $role = $user["role"];
+    $commandeAlimentsData = array();
+
+    if ($role == IS_ADMIN) {
+        $commandeAlimentsData["admins_id"] = $auteurID;
+        $commandeAlimentsData["admins_idAdmin"] = $auteurID;
+        $commandeAlimentsData["agents_id"] = ID_AGENT_SYSTEME;
+        $commandeAlimentsData["agents_idAgent"] = ID_AGENT_SYSTEME;
+        $commandeAlimentsData["role_id"] = IS_ADMIN_ID;
+    } elseif ($role == IS_AGENT) {
+        $commandeAlimentsData["agents_id"] = $auteurID;
+        $commandeAlimentsData["agents_idAgent"] = $auteurID;
+        $commandeAlimentsData["admins_id"] = ID_ADMIN_SYSTEME;
+        $commandeAlimentsData["admins_idAdmin"] = ID_ADMIN_SYSTEME;
+        $commandeAlimentsData["role_id"] = IS_AGENT_ID;
+    }
+
+    $commandeAlimentsID = $cmdAlimentID;
+    $dataCmdAlimentFound = $commandeAlimentsModel->find($commandeAlimentsID);
+
+    $cmdClientID = $dataCmdAlimentFound->commandeClients_idCommande;
+    $dataCmdClientFound = $commandeClientsModel->find($cmdClientID);
+
+    $natureID = $dataCmdClientFound->natures_idNature;
+    $clientID = $dataCmdClientFound->clients_idClient;
+    $statusCmdID = $dataCmdClientFound->statusCmd_id;
+    $sortieID = $dataCmdClientFound->id_sortie;
+
+    $quantite = $dataCmdAlimentFound->quantite;
+    $montant = $dataCmdAlimentFound->montant;
+    $prixtotal = $dataCmdAlimentFound->prixtotal;
+
+    $commandeAlimentsData["commandeClients_idCommande"] = $cmdClientID;
+    $today = getSiku();
+    $commandeAlimentsData["date"] = $today;
+    $commandeAlimentsData["siku"] = $today;
+    $commandeAlimentsData["etat_rapportID"] = ETAT_BON;
+    $commandeAlimentsData["natures_idNature"] = $natureID;
+    $commandeAlimentsData["quantite"] = $quantite;
+    $commandeAlimentsData["montant"] = $montant;
+    $commandeAlimentsData["prixtotal"] = $prixtotal;
+    $commandeAlimentsData["clients_idClient"] = $clientID;
+    $commandeAlimentsData["statusCmd_id"] = $statusCmdID;
+
+    $commandeAlimentsData['motifSorties_idMotif'] = MOTIF_SORTIE_CASH;
+    sortieAliment($commandeAlimentsData);
+
+    // $commandeClients->setStatusCmd_id($newStatusCmdID);
+    // $commandeClients->setUpdated_at($today);
+
+    $sortieID = getLastSortie($commandeAlimentsData)->id;
+    $commandeClients->setId_sortie($sortieID);
+    $commandeClientsModel->update($cmdClientID, $commandeClients);
+    // createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+    // $message = "Le Statut de Commande Aliment du client a été reglé";
+    // return success200($message);
 }

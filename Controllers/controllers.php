@@ -5180,3 +5180,8 @@ function createStatutCommande($montant)
     }
     return   $statusID;
 }
+
+function sommeMontant($oldMontant,$newMontant){
+    $somme=$oldMontant+$newMontant;
+    return $somme;
+}

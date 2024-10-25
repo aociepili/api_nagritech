@@ -381,17 +381,55 @@ function updateMontantPoussin($commandePoussinsData, $commandePoussinsParams)
                 $commandePoussins->setUpdated_at($today);
 
                 #Si le client paie la totalite de sa dette, on modifie le montant et le statut de sa cmde change REGLE 
-                if (($montant == $prixTotal) && ($cmdClientFound->statusCmd_id == STATUS_CMD_E_DETTE)) {
-                    $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
-                    $commandeClients->setUpdated_at($today);
+                if (($montant == $prixTotal)) {
+                    if ((in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
 
-                    $commandeClientsModel->update($cmdClientID, $commandeClients);
-                    createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
 
-                    $commandePoussinsModel->update($commandePoussinsID, $commandePoussins);
-                    $message = "Le montant de la Commande Poussin updated successfully";
-                    createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POUSSIN);
-                    return success200($message);
+                        $commandePoussinsModel->update($commandePoussinsID, $commandePoussins);
+                        $message = "Le montant de la Commande Poussin updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POUSSIN);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $commandePoussinsModel->update($commandePoussinsID, $commandePoussins);
+                        $message = "Le montant de la Commande Poussin updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POUSSIN);
+                        return success200($message);
+                    }
+                } elseif (($montant < $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_PAYABLE))) {
+                    $somme = sommeMontant($oldMontant, $newMontant);
+                    if (($somme >= $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                         $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                         $commandeClients->setUpdated_at($today);
+
+                         $commandeClientsModel->update($cmdClientID, $commandeClients);
+                         createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+ 
+                         $commandePoussinsModel->update($commandePoussinsID, $commandePoussins);
+                         $message = "Le montant de la Commande Poussin updated successfully";
+                         createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POUSSIN);
+                         return success200($message);
+                    }else{
+                         // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                         $commandeClients->setUpdated_at($today);
+
+                         $commandeClientsModel->update($cmdClientID, $commandeClients);
+                         createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+ 
+                         $commandePoussinsModel->update($commandePoussinsID, $commandePoussins);
+                         $message = "Le montant de la Commande Poussin updated successfully";
+                         createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_POUSSIN);
+                         return success200($message);
+                    }
                 } else {
                     $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
                     $commandeClients->setUpdated_at($today);
@@ -414,4 +452,76 @@ function updateMontantPoussin($commandePoussinsData, $commandePoussinsParams)
         $message = "Commande Poussin not update";
         return success205($message);
     }
+}
+
+function statutCmdPoussin($cmdPoussinID)
+{
+    require_once 'php-jwt/authentification.php';
+    $commandePoussinsModel = new Commande_poussinsModel();
+    $commandeAliments = $commandePoussinsModel;
+    $commandeClientsModel = new Commande_clientsModel();
+    $commandeClients = $commandeClientsModel;
+    # test de chargement de parametre
+    // paramsVerify($commandeAlimentsParams, "Commande Aliment");
+
+    $payload = authentification();
+    $user = (array)json_decode($payload);
+
+    $auteurID = $user["id"];
+    $role = $user["role"];
+    $cmdPoussinsData = array();
+
+    if ($role == IS_ADMIN) {
+        $cmdPoussinsData["admins_id"] = $auteurID;
+        $cmdPoussinsData["admins_idAdmin"] = $auteurID;
+        $cmdPoussinsData["agents_id"] = ID_AGENT_SYSTEME;
+        $cmdPoussinsData["agents_idAgent"] = ID_AGENT_SYSTEME;
+        $cmdPoussinsData["role_id"] = IS_ADMIN_ID;
+    } elseif ($role == IS_AGENT) {
+        $cmdPoussinsData["agents_id"] = $auteurID;
+        $cmdPoussinsData["agents_idAgent"] = $auteurID;
+        $cmdPoussinsData["admins_id"] = ID_ADMIN_SYSTEME;
+        $cmdPoussinsData["admins_idAdmin"] = ID_ADMIN_SYSTEME;
+        $cmdPoussinsData["role_id"] = IS_AGENT_ID;
+    }
+
+    $commandePoussinID = $cmdPoussinID;
+    $dataCmdPoussinFound = $commandePoussinsModel->find($commandePoussinID);
+
+    $cmdClientID = $dataCmdPoussinFound->commandeClients_idCommande;
+    $dataCmdClientFound = $commandeClientsModel->find($cmdClientID);
+
+    $natureID = $dataCmdClientFound->natures_idNature;
+    $clientID = $dataCmdClientFound->clients_idClient;
+    $statusCmdID = $dataCmdClientFound->statusCmd_id;
+    $sortieID = $dataCmdClientFound->id_sortie;
+
+    $quantite = $dataCmdPoussinFound->quantite;
+    $montant = $dataCmdPoussinFound->montant;
+    $prixtotal = $dataCmdPoussinFound->prixtotal;
+
+    $cmdPoussinsData["commandeClients_idCommande"] = $cmdClientID;
+    $today = getSiku();
+    $cmdPoussinsData["date"] = $today;
+    $cmdPoussinsData["siku"] = $today;
+    $cmdPoussinsData["etat_rapportID"] = ETAT_BON;
+    $cmdPoussinsData["natures_idNature"] = $natureID;
+    $cmdPoussinsData["quantite"] = $quantite;
+    $cmdPoussinsData["montant"] = $montant;
+    $cmdPoussinsData["prixtotal"] = $prixtotal;
+    $cmdPoussinsData["clients_idClient"] = $clientID;
+    $cmdPoussinsData["statusCmd_id"] = $statusCmdID;
+
+    $cmdPoussinsData['motifSorties_idMotif'] = MOTIF_SORTIE_CASH;
+    sortiePoussin($cmdPoussinsData);
+
+    // $commandeClients->setStatusCmd_id($newStatusCmdID);
+    // $commandeClients->setUpdated_at($today);
+
+    $sortieID = getLastSortie($cmdPoussinsData)->id;
+    $commandeClients->setId_sortie($sortieID);
+    $commandeClientsModel->update($cmdClientID, $commandeClients);
+    // createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+    // $message = "Le Statut de Commande Aliment du client a été reglé";
+    // return success200($message);
 }

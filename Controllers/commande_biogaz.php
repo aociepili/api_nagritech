@@ -375,17 +375,54 @@ function updateMontantBiogaz($commandeBiogazData, $commandeBiogazParams)
                 $commandeBiogaz->setMontant($montant);
                 $commandeBiogaz->setUpdated_at($today);
                 #Si le client paie la totalite de sa dette, on modifie le montant et le statut de sa cmde change REGLE
-                if (($montant == $prixTotal) && ($cmdClientFound->statusCmd_id == STATUS_CMD_E_DETTE)) {
-                    $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
-                    $commandeClients->setUpdated_at($today);
+                if (($montant == $prixTotal)) {
 
-                    $commandeClientsModel->update($cmdClientID, $commandeClients);
-                    createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
-                    $CommandeBiogazModel->update($commandeBiogazID, $commandeBiogaz);
-                    $message = "Le montant de la Commande Biogaz updated successfully";
-                    createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_BIOGAZ);
-                    return success200($message);
-                } else {
+                    if (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT)) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $CommandeBiogazModel->update($commandeBiogazID, $commandeBiogaz);
+                        $message = "Le montant de la Commande Biogaz updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_BIOGAZ);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+                        $CommandeBiogazModel->update($commandeBiogazID, $commandeBiogaz);
+                        $message = "Le montant de la Commande Biogaz updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_BIOGAZ);
+                        return success200($message);
+                    }
+                } elseif (($montant < $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_PAYABLE))) {
+                    $somme = sommeMontant($oldMontant, $newMontant);
+
+                    if (($somme >= $prixTotal) && (in_array($cmdClientFound->statusCmd_id, STATUS_CMD_NO_STOCK_IMPACT))) {
+                        $commandeClients->setStatusCmd_id(STATUS_CMD_REGLE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $CommandeBiogazModel->update($commandeBiogazID, $commandeBiogaz);
+                        $message = "Le montant de la Commande Biogaz updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_BIOGAZ);
+                        return success200($message);
+                    } else {
+                        // $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
+                        $commandeClients->setUpdated_at($today);
+                        $commandeClientsModel->update($cmdClientID, $commandeClients);
+                        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_CLIENT);
+
+                        $CommandeBiogazModel->update($commandeBiogazID, $commandeBiogaz);
+                        $message = "Le montant de la Commande Biogaz updated successfully";
+                        createActivity(TYPE_OP_UPDATE, STATUS_OP_OK, TABLE_CMD_BIOGAZ);
+                        return success200($message);
+                    }
+                }else{
                     $commandeClients->setStatusCmd_id(STATUS_CMD_RESERVE);
                     $commandeClients->setUpdated_at($today);
                     $commandeClientsModel->update($cmdClientID, $commandeClients);
@@ -408,4 +445,76 @@ function updateMontantBiogaz($commandeBiogazData, $commandeBiogazParams)
         $message = "Commande Biogaz not update";
         return success205($message);
     }
+}
+
+function statutCmdBiogaz($cmdBiogazID)
+{
+    require_once 'php-jwt/authentification.php';
+    $commandeBiogazModel = new commande_biogazModel();
+    $commandeAliments = $commandeBiogazModel;
+    $commandeClientsModel = new Commande_clientsModel();
+    $commandeClients = $commandeClientsModel;
+    # test de chargement de parametre
+    // paramsVerify($commandeAlimentsParams, "Commande Aliment");
+
+    $payload = authentification();
+    $user = (array)json_decode($payload);
+
+    $auteurID = $user["id"];
+    $role = $user["role"];
+    $cmdBiogazData = array();
+
+    if ($role == IS_ADMIN) {
+        $cmdBiogazData["admins_id"] = $auteurID;
+        $cmdBiogazData["admins_idAdmin"] = $auteurID;
+        $cmdBiogazData["agents_id"] = ID_AGENT_SYSTEME;
+        $cmdBiogazData["agents_idAgent"] = ID_AGENT_SYSTEME;
+        $cmdBiogazData["role_id"] = IS_ADMIN_ID;
+    } elseif ($role == IS_AGENT) {
+        $cmdBiogazData["agents_id"] = $auteurID;
+        $cmdBiogazData["agents_idAgent"] = $auteurID;
+        $cmdBiogazData["admins_id"] = ID_ADMIN_SYSTEME;
+        $cmdBiogazData["admins_idAdmin"] = ID_ADMIN_SYSTEME;
+        $cmdBiogazData["role_id"] = IS_AGENT_ID;
+    }
+
+    $commandeBiogazID = $cmdBiogazID;
+    $dataCmdBiogazFound = $commandeBiogazModel->find($commandeBiogazID);
+
+    $cmdClientID = $dataCmdBiogazFound->commandeClients_idCommande;
+    $dataCmdClientFound = $commandeClientsModel->find($cmdClientID);
+
+    $natureID = $dataCmdClientFound->natures_idNature;
+    $clientID = $dataCmdClientFound->clients_idClient;
+    $statusCmdID = $dataCmdClientFound->statusCmd_id;
+    $sortieID = $dataCmdClientFound->id_sortie;
+
+    $quantite = $dataCmdBiogazFound->quantite;
+    $montant = $dataCmdBiogazFound->montant;
+    $prixtotal = $dataCmdBiogazFound->prixtotal;
+
+    $cmdBiogazData["commandeClients_idCommande"] = $cmdClientID;
+    $today = getSiku();
+    $cmdBiogazData["date"] = $today;
+    $cmdBiogazData["siku"] = $today;
+    $cmdBiogazData["etat_rapportID"] = ETAT_BON;
+    $cmdBiogazData["natures_idNature"] = $natureID;
+    $cmdBiogazData["quantite"] = $quantite;
+    $cmdBiogazData["montant"] = $montant;
+    $cmdBiogazData["prixtotal"] = $prixtotal;
+    $cmdBiogazData["clients_idClient"] = $clientID;
+    $cmdBiogazData["statusCmd_id"] = $statusCmdID;
+
+    $cmdBiogazData['motifSorties_idMotif'] = MOTIF_SORTIE_CASH;
+    sortieBiogaz($cmdBiogazData);
+
+    // $commandeClients->setStatusCmd_id($newStatusCmdID);
+    // $commandeClients->setUpdated_at($today);
+
+    $sortieID = getLastSortie($cmdBiogazData)->id;
+    $commandeClients->setId_sortie($sortieID);
+    $commandeClientsModel->update($cmdClientID, $commandeClients);
+    // createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CMD_ALIMENT);
+    // $message = "Le Statut de Commande Aliment du client a été reglé";
+    // return success200($message);
 }
