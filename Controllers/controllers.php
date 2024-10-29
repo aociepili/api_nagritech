@@ -1831,8 +1831,8 @@ function getSortiePouletDataById($sortieAlimentID)
 
     $dataClient =  getClientDataById($clientID);
     $dataSortie = getSortieDataById($sortieID);
-
-    $data = array_merge((array)$dataClient, (array)$dataSortie,  (array)$dataSPt);
+    $dataAdminOrAgent=getAdminAgentDataById($dataSortie["admins_id"],$dataSortie['agents_id']);
+    $data = array_merge((array)$dataClient, (array)$dataSortie,(array)$dataAdminOrAgent,  (array)$dataSPt);
     return $data;
 }
 function getSortiePouleDataById($sortieAlimentID)
@@ -1846,8 +1846,8 @@ function getSortiePouleDataById($sortieAlimentID)
 
     $dataClient =  getClientDataById($clientID);
     $dataSortie = getSortieDataById($sortieID);
-
-    $data = array_merge((array)$dataClient, (array)$dataSortie,  (array)$dataSP);
+    $dataAdminOrAgent=getAdminAgentDataById($dataSortie["admins_id"],$dataSortie['agents_id']);
+    $data = array_merge((array)$dataClient, (array)$dataSortie,(array)$dataAdminOrAgent,  (array)$dataSP);
     return $data;
 }
 function getSortieAlimentDataById($sortieAlimentID)
@@ -1855,15 +1855,19 @@ function getSortieAlimentDataById($sortieAlimentID)
     $sortieAlimentModel = new Sortie_alimentsModel();
 
     $dataSortieAliment = $sortieAlimentModel->find($sortieAlimentID);
+
     $dataSA = changeAttribut((array)$dataSortieAliment, "sortie_aliment");
+
     $clientID = $dataSortieAliment->clients_id;
     $sortieID = $dataSortieAliment->sorties_idSortie;
-
 
     $dataClient =  getClientDataById($clientID);
     $dataSortie = getSortieDataById($sortieID);
 
-    $data = array_merge((array)$dataClient, (array)$dataSortie,  (array)$dataSA);
+    $data = array();
+    $dataAdminOrAgent = getAdminAgentDataById($dataSortie["admins_id"], $dataSortie['agents_id']);
+
+    $data = array_merge((array)$dataClient, (array)$dataSortie, (array)$dataAdminOrAgent,  (array)$dataSA);
     return $data;
 }
 function getSortieBiogazDataById($sortieBiogazID)
@@ -1875,11 +1879,11 @@ function getSortieBiogazDataById($sortieBiogazID)
     $clientID = $dataSortieBiogaz->clients_id;
     $sortieID = $dataSortieBiogaz->sorties_idSortie;
 
-
+    $dataAgent = getAgentDataById($dataSortieBiogaz->agent_id);
     $dataClient =  getClientDataById($clientID);
     $dataSortie = getSortieDataById($sortieID);
-
-    $data = array_merge((array)$dataClient, (array)$dataSortie,  (array)$dataSB);
+    $dataAdminOrAgent=getAdminAgentDataById($dataSortie["admins_id"],$dataSortie['agents_id']);
+    $data = array_merge((array)$dataClient, (array)$dataSortie,(array)$dataAdminOrAgent,  (array)$dataSB);
     return $data;
 }
 function getSortieOeufDataById($sortieBiogazID)
@@ -1893,8 +1897,8 @@ function getSortieOeufDataById($sortieBiogazID)
 
     $dataClient =  getClientDataById($clientID);
     $dataSortie = getSortieDataById($sortieID);
-
-    $data = array_merge((array)$dataClient, (array)$dataSortie,  (array)$dataSO);
+    $dataAdminOrAgent=getAdminAgentDataById($dataSortie["admins_id"],$dataSortie['agents_id']);
+    $data = array_merge((array)$dataClient, (array)$dataSortie,(array) $dataAdminOrAgent,  (array)$dataSO);
     return $data;
 }
 function getSortieIncDataById($sortieBiogazID)
@@ -2045,16 +2049,28 @@ function getAgentDataById($agentID)
     $serviceModel = new ServicesModel();
 
     $dataAgent = $agentModel->find($agentID);
-    $dataA = changeAttribut((array)$dataAgent, "agent");
+    if (empty($dataAgent)) {
+        $dataAgent = array(
+            "setAgent" => false,
+            "text" => "No Agent found",
+        );
+        return $dataAgent;
+    } else {
+        $verifAgent = array(
+            "setAgent" => true,
+            "text" => "Agent found",
+        );
+        $dataA = changeAttribut((array)$dataAgent, "agent");
+        // debug400("test", $dataAgent);
+        $personneID = $dataAgent->personnes_idPersonne;
+        $serviceID = $dataAgent->services_id;
+        $dataPersonne = getPersonneDataById($personneID);
+        // $dataService = $serviceModel->find($serviceID);
+        $dataService = getServiceDataById($serviceID);
 
-    $personneID = $dataAgent->personnes_idPersonne;
-    $serviceID = $dataAgent->services_id;
-    $dataPersonne = getPersonneDataById($personneID);
-    // $dataService = $serviceModel->find($serviceID);
-    $dataService = getServiceDataById($serviceID);
-
-    $data = array_merge((array)$dataPersonne, (array)$dataService, (array)$dataA);
-    return $data;
+        $data = array_merge((array)$dataPersonne, (array)$dataService, (array)$dataA, $verifAgent);
+        return $data;
+    }
 }
 function getClientDataById($agentID)
 {
@@ -2103,14 +2119,21 @@ function getPersonneDataById($personneID)
     $adresseModel = new AdressesModel();
 
     $dataPersonne = $personneModel->find($personneID);
-    $dataP = changeAttribut((array)$dataPersonne, "personne");
-    // debug400('Test', $personneID);
-    $adresseID = $dataPersonne->adresses_idAdresse;
-    $dataAdresse = $adresseModel->find($adresseID);
-    $dataA = changeAttribut((array)$dataAdresse, "adresse");
+    if (empty($dataPersonne)) {
+        $data = array(
+            "personne" => "Pas de personne attribuer",
+        );
+        return $data;
+    } else {
+        $dataP = changeAttribut((array)$dataPersonne, "personne");
+        // debug400('Test', $personneID);
+        $adresseID = $dataPersonne->adresses_idAdresse;
+        $dataAdresse = $adresseModel->find($adresseID);
+        $dataA = changeAttribut((array)$dataAdresse, "adresse");
 
-    $data = array_merge((array)$dataP, (array)$dataA);
-    return $data;
+        $data = array_merge((array)$dataP, (array)$dataA);
+        return $data;
+    }
 }
 function getFournisseurDataById($fournisseurID)
 {
@@ -5181,7 +5204,29 @@ function createStatutCommande($montant)
     return   $statusID;
 }
 
-function sommeMontant($oldMontant,$newMontant){
-    $somme=$oldMontant+$newMontant;
+function sommeMontant($oldMontant, $newMontant)
+{
+    $somme = $oldMontant + $newMontant;
     return $somme;
+}
+
+function getAdminAgentDataById($idAdmin, $idAgent)
+{
+    $data = array();
+
+    if (($idAgent != null) && ($idAgent != 0)) {
+        $dataAgent = getAgentDataById($idAgent);
+
+        $data = array_merge((array)$dataAgent);
+    } elseif (($idAdmin != null) && ($idAdmin != 0)) {
+
+        $dataAdmin = getAdminDataById($idAdmin);
+        $data = array_merge((array)$dataAdmin);
+    } else {
+        $data = [
+            "setAgent" => false,
+            "setAdmin" => false,
+        ];
+    }
+    return $data;
 }

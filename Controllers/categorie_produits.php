@@ -173,10 +173,10 @@ function activeCatProduit($catProdParams)
         $catProduit->setUpdated_at(getSiku());
         $categorieProduitModel->update($catProduitID, $catProduit);
         createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CAT_PROD);
-        $message = "Type Operation Archive successfully";
+        $message = "Type Operation Active successfully";
         return success200($message);
     } else {
-        $message = "Type Operation not Archive  ";
+        $message = "Type Operation not Active";
         return success205($message);
     }
 }
