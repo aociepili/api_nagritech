@@ -1,6 +1,5 @@
 <?php
-$path = get_include_path();
-set_include_path($path . PATH_SEPARATOR . "../");
+
 include('../Autoloader.php');
 include('controllers.php');
 
@@ -147,15 +146,20 @@ function archiveCatProduit($catProdParams)
     $catProduitID = $catProdParams['id'];
     $catProduitData = $categorieProduitModel->find($catProduitID);
 
-    if ($catProduitID == $catProduitData->id) {
-        $catProduit->setStatus(false);
-        $catProduit->setUpdated_at(getSiku());
-        $categorieProduitModel->update($catProduitID, $catProduit);
-        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CAT_PROD);
-        $message = "Type Operation Archive successfully";
-        return success200($message);
+    if (!empty($catProduitData)) {
+        if ($catProduitID == $catProduitData->id) {
+            $catProduit->setStatus(false);
+            $catProduit->setUpdated_at(getSiku());
+            $categorieProduitModel->update($catProduitID, $catProduit);
+            createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CAT_PROD);
+            $message = "Type Operation Archive successfully";
+            return success200($message);
+        } else {
+            $message = "Type Operation not Archive  ";
+            return success205($message);
+        }
     } else {
-        $message = "Type Operation not Archive  ";
+        $message = "Le produit n'existe pas dans la BD";
         return success205($message);
     }
 }
@@ -168,15 +172,20 @@ function activeCatProduit($catProdParams)
     $catProduitID = $catProdParams['id'];
     $catProduitData = $categorieProduitModel->find($catProduitID);
 
-    if ($catProduitID == $catProduitData->id) {
-        $catProduit->setStatus(true);
-        $catProduit->setUpdated_at(getSiku());
-        $categorieProduitModel->update($catProduitID, $catProduit);
-        createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CAT_PROD);
-        $message = "Type Operation Active successfully";
-        return success200($message);
+    if (!empty($catProduitData)) {
+        if ($catProduitID == $catProduitData->id) {
+            $catProduit->setStatus(true);
+            $catProduit->setUpdated_at(getSiku());
+            $categorieProduitModel->update($catProduitID, $catProduit);
+            createActivity(TYPE_OP_UPDATE_STATUS, STATUS_OP_OK, TABLE_CAT_PROD);
+            $message = "Type Operation Active successfully";
+            return success200($message);
+        } else {
+            $message = "Type Operation not Active";
+            return success205($message);
+        }
     } else {
-        $message = "Type Operation not Active";
+        $message = "Le produit n'existe pas dans la BD";
         return success205($message);
     }
 }
